@@ -1,26 +1,23 @@
-use async_channel::bounded;
-use gio::glib;
-use gio::glib::clone;
+use gio::glib::MainContext;
 use gtk::prelude::*;
+use gtk::Box;
+use gtk::Label;
 use gtk::Orientation;
 use hyprland::data::Client;
-use hyprland::event_listener::AsyncEventListener;
+use hyprland::event_listener::EventListener;
 use hyprland::shared::HyprDataActiveOptional;
-use hyprland::Result;
-use std::sync::{Arc, Mutex};
 
-use crate::utils::runtime;
-
-fn hook_name(name: String) -> String {
+fn hook_client_name(name: String) -> String {
     match name.to_lowercase().as_str() {
         "kitty" => "󰄛 Terminal",
         "firefox" => "󰈹 Firefox",
-        "webcord" => " Discord",
-        "discord" => " Discord",
-        "vesktop" => " Discord",
+        "webcord" => "  Discord",
+        "discord" => "  Discord",
+        "vesktop" => "  Discord",
         "steam" => " Steam",
-        _ => name.as_str()
-    }.to_string()
+        _ => name.as_str(),
+    }
+    .to_string()
 }
 
 fn get_active_client() -> String {
@@ -33,90 +30,42 @@ fn get_active_client() -> String {
             .to_string(),
         None => "󰇄 Desktop".to_string(),
     };
-    hook_name(name)
+
+    hook_client_name(name)
 }
 
-pub fn active_client_box() -> gtk::Box {
-    let hbox = gtk::Box::new(Orientation::Horizontal, 0);
+pub fn active_client_box() -> Box {
+    let hbox = Box::new(Orientation::Horizontal, 0);
     hbox.add_css_class("active-client");
     hbox.add_css_class("bar-box");
 
-    let active_app_label = gtk::Label::new(None);
-
-    active_app_label.set_label(&get_active_client());
-
+    let active_app_label = Label::new(Some(&get_active_client()));
     active_app_label.add_css_class("active-client-label");
     active_app_label.add_css_class("bar-text");
-    hbox.append(&active_app_label);
-    let (sender, receiver) = bounded::<String>(1);
-    let runtime = runtime();
 
-    let sender = Arc::new(Mutex::new(sender));
-    let sender_clone = Arc::clone(&sender);
+    hbox.append(&active_app_label.clone());
 
-    runtime.spawn(async move {
-        let mut event_listener = AsyncEventListener::new();
+    let active_app_label1 = active_app_label.clone();
+    let active_app_label2 = active_app_label.clone();
+    let active_app_label3 = active_app_label.clone();
+    MainContext::default().spawn_local(async move {
+        let mut event_listener = EventListener::new();
 
-        event_listener.add_workspace_change_handler({
-            let sender_clone = Arc::clone(&sender_clone);
-            move |data| {
-                let sender_clone = Arc::clone(&sender_clone);
-                Box::pin(async move {
-                    if let Ok(sender) = sender_clone.lock() {
-                        sender
-                            .send_blocking(get_active_client())
-                            .expect("The channel needs to be open.");
-                    }
-                })
-            }
+        event_listener.add_active_window_change_handler(move |data| {
+            let app = data.unwrap().window_class;
+            active_app_label1.set_label(&hook_client_name(app));
         });
 
-        event_listener.add_window_close_handler({
-            let sender_clone = Arc::clone(&sender_clone);
-            move |data| {
-                let sender_clone = Arc::clone(&sender_clone);
-                Box::pin(async move {
-                    if let Ok(sender) = sender_clone.lock() {
-                        sender
-                            .send_blocking(get_active_client())
-                            .expect("The channel needs to be open.");
-                    }
-                })
-            }
+        event_listener.add_workspace_change_handler(move |_| {
+            active_app_label2.set_label(&get_active_client());
         });
 
-        event_listener.add_active_window_change_handler({
-            let sender_clone = Arc::clone(&sender_clone);
-            move |data| {
-                let sender_clone = Arc::clone(&sender_clone);
-                Box::pin(async move {
-                    let title = if let Some(data) = data {
-                        data.window_class
-                    } else {
-                        String::from("How?")
-                    };
-
-                    if let Ok(sender) = sender_clone.lock() {
-                        sender
-                            .send_blocking(hook_name(title))
-                            .expect("The channel needs to be open.");
-                    }
-                })
-            }
+        event_listener.add_window_close_handler(move |_| {
+            active_app_label3.set_label(&get_active_client());
         });
 
-        let _ = event_listener.start_listener_async().await;
+        event_listener.start_listener_async().await.unwrap();
     });
-
-    glib::spawn_future_local(clone!(
-        #[weak]
-        active_app_label,
-        async move {
-            while let Ok(title) = receiver.recv().await {
-                active_app_label.set_label(&title);
-            }
-        }
-    ));
 
     hbox
 }

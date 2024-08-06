@@ -1,8 +1,12 @@
 use active_window::active_client_box;
+use clock::bar_clock;
 use gtk::prelude::*;
 use gtk4_layer_shell::{Edge, Layer, LayerShell};
+use notifications::bar_notifications;
 
 mod active_window;
+mod clock;
+mod notifications;
 
 fn start() -> gtk::Box {
     let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 0);
@@ -17,6 +21,8 @@ fn center() -> gtk::Box {
 
 fn end() -> gtk::Box {
     let hbox = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    hbox.append(&bar_clock());
+    hbox.append(&bar_notifications());
     hbox
 }
 
